@@ -1,4 +1,5 @@
 mod event;
+mod search;
 
 #[tokio::main]
 async fn main() {}

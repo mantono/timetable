@@ -1,3 +1,5 @@
+use serde_derive::Deserialize;
+
 #[derive(Debug, Clone)]
 pub struct Event {
     key: String,
@@ -91,9 +93,12 @@ impl Event {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-enum State {
+#[derive(Deserialize, Debug, Copy, Clone)]
+pub enum State {
+    #[serde(alias = "SCHEDULED")]
     Scheduled,
+    #[serde(alias = "DISABLED")]
     Disabled,
+    #[serde(alias = "COMPLETED")]
     Completed,
 }
