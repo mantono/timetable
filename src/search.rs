@@ -62,12 +62,12 @@ pub trait EventRepo {
     type Error;
 
     fn search(&self, query: SearchQuery) -> Result<Vec<&Event>, Self::Error>;
-    fn insert(&self, namespace: &str, event: Event) -> Result<Event, Self::Error>;
+    fn insert(&mut self, namespace: &str, event: Event) -> Result<Event, Self::Error>;
 
     fn get(&self, namespace: &str, event_id: uuid::Uuid) -> Result<Option<Event>, Self::Error>;
 
     fn change_state(
-        &self,
+        &mut self,
         namespace: &str,
         event_id: uuid::Uuid,
         prior_state: State,
@@ -95,16 +95,30 @@ impl EventRepo for VecRepo {
         Ok(events)
     }
 
-    fn insert(&self, namespace: &str, event: Event) -> Result<Event, Self::Error> {
-        todo!()
+    fn insert(&mut self, namespace: &str, event: Event) -> Result<Event, Self::Error> {
+        let row: Option<Event> = self.get(namespace, event.id())?;
+        match row {
+            Some(event) => Ok(event),
+            None => {
+                self.0.push(event.clone());
+                Ok(event)
+            }
+        }
     }
 
     fn get(&self, namespace: &str, event_id: uuid::Uuid) -> Result<Option<Event>, Self::Error> {
-        todo!()
+        let x = self
+            .0
+            .iter()
+            .filter(|ev| ev.id() == event_id)
+            .map(|ev| ev.clone())
+            .next();
+
+        Ok(x)
     }
 
     fn change_state(
-        &self,
+        &mut self,
         namespace: &str,
         event_id: uuid::Uuid,
         prior_state: State,

@@ -39,12 +39,12 @@ impl Event {
         &self.value
     }
 
-    pub fn id(&self) -> &uuid::Uuid {
-        &self.id
+    pub fn id(&self) -> uuid::Uuid {
+        self.id
     }
 
-    pub fn idempotence_key(&self) -> &uuid::Uuid {
-        &self.idempotence_key
+    pub fn idempotence_key(&self) -> uuid::Uuid {
+        self.idempotence_key
     }
 
     pub fn state(&self) -> State {
