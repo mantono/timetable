@@ -15,7 +15,6 @@ impl Event {
     pub fn new(
         key: String,
         namespace: String,
-        job_type: String,
         schedule_at: chrono::DateTime<chrono::Utc>,
         value: Option<serde_json::Value>,
     ) -> Event {

@@ -8,7 +8,6 @@ use crate::event::{Event, State};
 #[derive(Deserialize, Debug, Clone)]
 pub struct SearchQuery {
     namespace: String,
-    job_type: String,
     key: Option<String>,
     state: Option<Vec<State>>,
     order: Option<Order>,
@@ -20,10 +19,6 @@ pub struct SearchQuery {
 impl SearchQuery {
     pub fn namespace(&self) -> &str {
         &self.namespace
-    }
-
-    pub fn job_type(&self) -> &str {
-        &self.job_type
     }
 
     pub fn key(&self) -> &Option<String> {
@@ -67,19 +62,13 @@ pub trait EventRepo {
     type Error;
 
     fn search(&self, query: SearchQuery) -> Result<Vec<&Event>, Self::Error>;
-    fn insert(&self, namespace: &str, job_type: &str, event: Event) -> Result<Event, Self::Error>;
+    fn insert(&self, namespace: &str, event: Event) -> Result<Event, Self::Error>;
 
-    fn get(
-        &self,
-        namespace: &str,
-        job_type: &str,
-        event_id: uuid::Uuid,
-    ) -> Result<Option<Event>, Self::Error>;
+    fn get(&self, namespace: &str, event_id: uuid::Uuid) -> Result<Option<Event>, Self::Error>;
 
     fn change_state(
         &self,
         namespace: &str,
-        job_type: &str,
         event_id: uuid::Uuid,
         prior_state: State,
         new_state: State,
@@ -106,23 +95,17 @@ impl EventRepo for VecRepo {
         Ok(events)
     }
 
-    fn insert(&self, namespace: &str, job_type: &str, event: Event) -> Result<Event, Self::Error> {
+    fn insert(&self, namespace: &str, event: Event) -> Result<Event, Self::Error> {
         todo!()
     }
 
-    fn get(
-        &self,
-        namespace: &str,
-        job_type: &str,
-        event_id: uuid::Uuid,
-    ) -> Result<Option<Event>, Self::Error> {
+    fn get(&self, namespace: &str, event_id: uuid::Uuid) -> Result<Option<Event>, Self::Error> {
         todo!()
     }
 
     fn change_state(
         &self,
         namespace: &str,
-        job_type: &str,
         event_id: uuid::Uuid,
         prior_state: State,
         new_state: State,
