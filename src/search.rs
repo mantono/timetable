@@ -1,14 +1,15 @@
-use std::ops::RangeInclusive;
+use std::{convert::Infallible, ops::RangeInclusive};
 
 use chrono::TimeZone;
 use serde_derive::Deserialize;
 
-use crate::event::State;
+use crate::event::{Event, State};
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct SearchQuery {
     namespace: String,
     job_type: String,
+    key: Option<String>,
     state: Option<Vec<State>>,
     order: Option<Order>,
     limit: Option<usize>,
@@ -23,6 +24,10 @@ impl SearchQuery {
 
     pub fn job_type(&self) -> &str {
         &self.job_type
+    }
+
+    pub fn key(&self) -> &Option<String> {
+        &self.key
     }
 
     pub fn state(&self) -> Vec<State> {
@@ -56,4 +61,72 @@ pub enum Order {
     Desc,
     #[serde(alias = "RANDOM")]
     Rand,
+}
+
+pub trait EventRepo {
+    type Error;
+
+    fn search(&self, query: SearchQuery) -> Result<Vec<&Event>, Self::Error>;
+    fn insert(&self, namespace: &str, job_type: &str, event: Event) -> Result<Event, Self::Error>;
+
+    fn get(
+        &self,
+        namespace: &str,
+        job_type: &str,
+        event_id: uuid::Uuid,
+    ) -> Result<Option<Event>, Self::Error>;
+
+    fn change_state(
+        &self,
+        namespace: &str,
+        job_type: &str,
+        event_id: uuid::Uuid,
+        prior_state: State,
+        new_state: State,
+    ) -> Result<(), Self::Error>;
+}
+
+struct VecRepo(Vec<Event>);
+
+impl EventRepo for VecRepo {
+    type Error = Infallible;
+
+    fn search(&self, query: SearchQuery) -> Result<Vec<&Event>, Self::Error> {
+        let events: Vec<&Event> = self
+            .0
+            .iter()
+            .filter(|ev| query.scheduled_at().contains(ev.schedule_at()))
+            .filter(|ev| query.state().contains(&ev.state()))
+            .filter(|ev| match query.key() {
+                Some(key) => ev.key() == key,
+                None => true,
+            })
+            .collect();
+
+        Ok(events)
+    }
+
+    fn insert(&self, namespace: &str, job_type: &str, event: Event) -> Result<Event, Self::Error> {
+        todo!()
+    }
+
+    fn get(
+        &self,
+        namespace: &str,
+        job_type: &str,
+        event_id: uuid::Uuid,
+    ) -> Result<Option<Event>, Self::Error> {
+        todo!()
+    }
+
+    fn change_state(
+        &self,
+        namespace: &str,
+        job_type: &str,
+        event_id: uuid::Uuid,
+        prior_state: State,
+        new_state: State,
+    ) -> Result<(), Self::Error> {
+        todo!()
+    }
 }

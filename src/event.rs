@@ -7,8 +7,6 @@ pub struct Event {
     id: uuid::Uuid,
     idempotence_key: uuid::Uuid,
     state: State,
-    namespace: String,
-    job_type: String,
     created_at: chrono::DateTime<chrono::Utc>,
     scheduled_at: chrono::DateTime<chrono::Utc>,
 }
@@ -29,11 +27,33 @@ impl Event {
             id: uuid::Uuid::new_v4(),
             idempotence_key: uuid::Uuid::new_v4(),
             state: State::Scheduled,
-            namespace,
-            job_type,
             created_at: chrono::Utc::now(),
             scheduled_at: schedule_at,
         }
+    }
+
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
+    pub fn value(&self) -> &serde_json::Value {
+        &self.value
+    }
+
+    pub fn id(&self) -> &uuid::Uuid {
+        &self.id
+    }
+
+    pub fn idempotence_key(&self) -> &uuid::Uuid {
+        &self.idempotence_key
+    }
+
+    pub fn state(&self) -> State {
+        self.state
+    }
+
+    pub fn schedule_at(&self) -> &chrono::DateTime<chrono::Utc> {
+        &self.scheduled_at
     }
 
     pub fn next(
@@ -48,8 +68,6 @@ impl Event {
             id: uuid::Uuid::new_v4(),
             idempotence_key: uuid::Uuid::new_v4(),
             state: State::Scheduled,
-            namespace: self.namespace.clone(),
-            job_type: self.job_type.clone(),
             created_at: chrono::Utc::now(),
             scheduled_at: schedule_at,
             value,
@@ -93,7 +111,7 @@ impl Event {
     }
 }
 
-#[derive(Deserialize, Debug, Copy, Clone)]
+#[derive(Deserialize, Debug, Copy, Clone, PartialEq, Eq)]
 pub enum State {
     #[serde(alias = "SCHEDULED")]
     Scheduled,
