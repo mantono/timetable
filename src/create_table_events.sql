@@ -1,4 +1,5 @@
 CREATE TYPE state AS ENUM('SCHEDULED', 'DISABLED', 'COMPLETED');
+-- CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE IF NOT EXISTS events(
     id                     UUID                            NOT NULL PRIMARY KEY DEFAULT uuid_generate_v4(),

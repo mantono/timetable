@@ -26,7 +26,10 @@ impl SearchQuery {
     }
 
     pub fn state(&self) -> Vec<State> {
-        self.state.unwrap_or(vec![State::Scheduled])
+        match &self.state {
+            Some(state) => state.clone(),
+            None => vec![State::Scheduled],
+        }
     }
 
     pub fn order(&self) -> Order {
@@ -48,7 +51,7 @@ impl SearchQuery {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, Copy)]
 pub enum Order {
     #[serde(alias = "ASCENDING")]
     Asc,
