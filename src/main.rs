@@ -1,15 +1,22 @@
 use std::{convert::Infallible, net::SocketAddr};
 
+use clap::Args;
+use clap::Parser;
 use event::Event;
 use hyper::{Body, Request, Response, Server, StatusCode};
 use routerify::{ext::RequestExt, Middleware, RequestInfo, Router, RouterService};
 use search::Order;
 
+use crate::config::Config;
+
+mod config;
 mod event;
 mod search;
 
 #[tokio::main]
 async fn main() {
+    let cfg: Config = Config::parse();
+    println!("{}", cfg.db_url());
     let router = router();
 
     // Create a Service from the router above to handle incoming requests.
@@ -33,18 +40,23 @@ async fn main() {
 fn router() -> Router<Body, Infallible> {
     Router::builder()
         .middleware(Middleware::pre(logger))
-        .get("/", home_handler)
+        .post("/v1/schedule/search", search_events)
+        .put("/v1/schedule", schedule_event)
         .err_handler_with_info(error_handler)
         .build()
         .unwrap()
 }
 
 // A handler for "/" page.
-async fn home_handler(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+async fn search_events(req: Request<Body>) -> Result<Response<Body>, Infallible> {
     // Access the app state.
     // let state = req.data::<State>().unwrap();
     // println!("State value: {}", state.0);
 
+    Ok(Response::new(Body::from("Hello world!")))
+}
+
+async fn schedule_event(req: Request<Body>) -> Result<Response<Body>, Infallible> {
     Ok(Response::new(Body::from("Hello world!")))
 }
 
