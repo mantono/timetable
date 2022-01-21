@@ -1,5 +1,4 @@
-CREATE TYPE state AS ENUM('SCHEDULED', 'DISABLED', 'COMPLETED');
--- CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE IF NOT EXISTS events(
     id                     UUID                            NOT NULL PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -11,7 +10,3 @@ CREATE TABLE IF NOT EXISTS events(
     created_at             TIMESTAMP WITH TIME ZONE        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     scheduled_at           TIMESTAMP WITH TIME ZONE        NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS key_idx ON events(namespace, key);
-CREATE INDEX IF NOT EXISTS state_idx ON events(namespace, scheduled_at, state);
-CREATE UNIQUE INDEX IF NOT EXISTS single_scheduled_idx ON events(namespace, key) WHERE state = 'SCHEDULED';

@@ -146,7 +146,7 @@ impl EventRepoPgsql {
             3 => Ok(()),
             0 => self
                 .client
-                .simple_query("CREATE TYPE state AS ENUM('SCHEDULED', 'DISABLED', 'COMPLETED');")
+                .simple_query(include_str!("../res/db/create_state_enums.sql"))
                 .await
                 .map(|_| ()),
             _ => panic!("Bad database state for created enums"),
@@ -154,26 +154,17 @@ impl EventRepoPgsql {
     }
 
     async fn init_table(&self) -> Result<(), tokio_postgres::Error> {
-        self.client.simple_query("
-            CREATE TABLE IF NOT EXISTS events(
-                id                     UUID                            NOT NULL PRIMARY KEY DEFAULT uuid_generate_v4(),
-                key                    VARCHAR(128)                    NOT NULL,
-                value                  JSON                            NOT NULL DEFAULT '{}'::json,
-                idempotence_key        UUID                            NOT NULL UNIQUE DEFAULT uuid_generate_v4(),
-                namespace              VARCHAR(64)                     NOT NULL,
-                state                  state                           NOT NULL DEFAULT 'SCHEDULED',
-                created_at             TIMESTAMP WITH TIME ZONE        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                scheduled_at           TIMESTAMP WITH TIME ZONE        NOT NULL
-            );
-        ").await.map(|_| ())
+        self.client
+            .simple_query(include_str!("../res/db/create_events_table.sql"))
+            .await
+            .map(|_| ())
     }
 
     async fn init_idx(&self) -> Result<(), tokio_postgres::Error> {
-        self.client.simple_query("
-            CREATE INDEX IF NOT EXISTS key_idx ON events(namespace, key);
-            CREATE INDEX IF NOT EXISTS state_idx ON events(namespace, scheduled_at, state);
-            CREATE UNIQUE INDEX IF NOT EXISTS single_scheduled_idx ON events(namespace, key) WHERE state = 'SCHEDULED';
-        ").await.map(|_| ())
+        self.client
+            .simple_query(include_str!("../res/db/create_events_indices.sql"))
+            .await
+            .map(|_| ())
     }
 
     fn search(&self, query: SearchQuery) -> Result<Vec<&Event>, Infallible> {
