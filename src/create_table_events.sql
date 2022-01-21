@@ -12,6 +12,6 @@ CREATE TABLE IF NOT EXISTS events(
     scheduled_at           TIMESTAMP WITH TIME ZONE        NOT NULL
 );
 
-CREATE INDEX key_idx ON events(namespace, key);
-CREATE INDEX state_idx ON events(namespace, scheduled_at, state);
-CREATE UNIQUE INDEX single_scheduled_idx ON events(namespace, key) WHERE state = 'SCHEDULED';
+CREATE INDEX IF NOT EXISTS key_idx ON events(namespace, key);
+CREATE INDEX IF NOT EXISTS state_idx ON events(namespace, scheduled_at, state);
+CREATE UNIQUE INDEX IF NOT EXISTS single_scheduled_idx ON events(namespace, key) WHERE state = 'SCHEDULED';

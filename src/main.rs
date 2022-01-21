@@ -6,8 +6,11 @@ use event::Event;
 use hyper::{Body, Request, Response, Server, StatusCode};
 use routerify::{ext::RequestExt, Middleware, RequestInfo, Router, RouterService};
 use search::Order;
+use tokio_postgres::GenericClient;
+use tokio_postgres::{Error, NoTls};
 
 use crate::config::Config;
+use crate::search::EventRepoPgsql;
 
 mod config;
 mod event;
@@ -17,6 +20,18 @@ mod search;
 async fn main() {
     let cfg: Config = Config::parse();
     println!("{}", cfg.db_url());
+
+    let (client, connection) = tokio_postgres::connect(cfg.db_url(), NoTls).await.unwrap();
+
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+
+    let repo = EventRepoPgsql::new(client);
+    repo.init().await.unwrap();
+
     let router = router();
 
     // Create a Service from the router above to handle incoming requests.

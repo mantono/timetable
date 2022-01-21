@@ -5,6 +5,7 @@ pub struct Event {
     key: String,
     value: serde_json::Value,
     id: uuid::Uuid,
+    namespace: String,
     idempotence_key: uuid::Uuid,
     state: State,
     created_at: chrono::DateTime<chrono::Utc>,
@@ -24,6 +25,7 @@ impl Event {
             key,
             value,
             id: uuid::Uuid::new_v4(),
+            namespace,
             idempotence_key: uuid::Uuid::new_v4(),
             state: State::Scheduled,
             created_at: chrono::Utc::now(),
@@ -41,6 +43,10 @@ impl Event {
 
     pub fn id(&self) -> uuid::Uuid {
         self.id
+    }
+
+    pub fn namespace(&self) -> &str {
+        &self.namespace
     }
 
     pub fn idempotence_key(&self) -> uuid::Uuid {
@@ -65,6 +71,7 @@ impl Event {
         let next = Event {
             key: self.key.clone(),
             id: uuid::Uuid::new_v4(),
+            namespace: self.namespace.clone(),
             idempotence_key: uuid::Uuid::new_v4(),
             state: State::Scheduled,
             created_at: chrono::Utc::now(),
