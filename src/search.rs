@@ -1,11 +1,14 @@
-use std::{convert::Infallible, ops::RangeInclusive, vec};
+use std::{convert::Infallible, ops::RangeInclusive, sync::Arc, vec};
 
 use chrono::TimeZone;
 use postgres_types::ToSql;
 use serde_derive::Deserialize;
 use tokio_postgres::{GenericClient, Row};
 
-use crate::event::{Event, State};
+use crate::{
+    event::{Event, State},
+    CreateEvent,
+};
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct SearchQuery {
@@ -119,12 +122,14 @@ pub enum EventRepoErr {
     InvalidState,
 }
 
+#[derive(Clone)]
 pub struct EventRepoPgsql {
-    client: tokio_postgres::Client,
+    client: Arc<tokio_postgres::Client>,
 }
 
 impl EventRepoPgsql {
     pub fn new(client: tokio_postgres::Client) -> EventRepoPgsql {
+        let client = Arc::new(client);
         EventRepoPgsql { client }
     }
 
@@ -172,11 +177,11 @@ impl EventRepoPgsql {
         todo!()
     }
 
-    pub async fn insert(&self, event: Event) -> Result<Event, Infallible> {
+    pub async fn insert(&self, event: CreateEvent) -> Result<CreateEvent, Infallible> {
         let params: [&(dyn ToSql + Sync); 4] = [
             &event.key(),
             &event.namespace(),
-            &event.schedule_at(),
+            &event.schedule_at().unwrap(),
             &event.value(),
         ];
         self.client

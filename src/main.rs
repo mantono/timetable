@@ -3,12 +3,11 @@ use std::{convert::Infallible, net::SocketAddr};
 use clap::Args;
 use clap::Parser;
 use event::Event;
-use hyper::{Body, Request, Response, Server, StatusCode};
-use routerify::{ext::RequestExt, Middleware, RequestInfo, Router, RouterService};
 use search::Order;
 use serde::de::DeserializeOwned;
 use serde_derive::Deserialize;
 use serde_derive::Serialize;
+use tide::Request;
 use tokio_postgres::GenericClient;
 use tokio_postgres::{Error, NoTls};
 
@@ -35,94 +34,44 @@ async fn main() {
     let repo = EventRepoPgsql::new(client);
     repo.init().await.unwrap();
 
-    let router = router(repo);
-
-    // Create a Service from the router above to handle incoming requests.
-    let service = RouterService::new(router).unwrap();
-
-    // The address on which the server will be listening.
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-
-    // Create a server by passing the created service to `.serve` method.
-    let server = Server::bind(&addr).serve(service);
-
-    println!("App is running on: {}", addr);
-    if let Err(err) = server.await {
-        eprintln!("Server error: {}", err);
-    }
-}
-
-/// - POST /v1/schedule/search - Search for events
-/// - PUT /v1/schedule - Schedule event
-/// - PUT /v1/schedule/{namespace}/{event_id}/{state} - Update the state of the event
-fn router(event_repo: EventRepoPgsql) -> Router<Body, Infallible> {
-    Router::builder()
-        .data(event_repo)
-        .middleware(Middleware::pre(logger))
-        .post("/v1/schedule/search", search_events)
-        .put("/v1/schedule", schedule_event)
-        .err_handler_with_info(error_handler)
-        .build()
-        .unwrap()
-}
-
-// A handler for "/" page.
-async fn search_events(req: Request<Body>) -> Result<Response<Body>, Infallible> {
-    // Access the app state.
-    // let state = req.data::<State>().unwrap();
-    // println!("State value: {}", state.0);
-
-    Ok(Response::new(Body::from("Hello world!")))
+    let mut app = tide::with_state(repo);
+    app.at("/v1/schedule").put(schedule_event);
+    app.listen("127.0.0.1:3000").await.unwrap();
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CreateEvent {
-    pub key: String,
-    pub value: Option<serde_json::Value>,
-    pub namespace: String,
+    key: String,
+    value: Option<serde_json::Value>,
+    namespace: String,
     #[serde(alias = "scheduleAt")]
-    pub schedule_at: chrono::DateTime<chrono::Utc>,
+    schedule_at: String,
 }
 
-async fn schedule_event(mut req: Request<Body>) -> Result<Response<Body>, Infallible> {
-    //let repo = req.data::<EventRepoPgsql>().unwrap();
-    let event: CreateEvent = get_request_body(&mut req).await.unwrap();
-    //repo.insert(event.clone()).await.unwrap();
-    Ok(Response::new(Body::from("Hello world!")))
-}
+impl CreateEvent {
+    pub fn key(&self) -> &str {
+        &self.key
+    }
 
-async fn get_request_body<T: DeserializeOwned>(req: &mut Request<Body>) -> Result<T, String> {
-    match hyper::body::to_bytes(req.body_mut()).await {
-        Ok(bytes) => {
-            let bytes = bytes.to_vec();
-            match serde_json::from_slice::<T>(bytes.as_slice()) {
-                Ok(body) => Ok(body),
-                Err(e) => Err(format!("failed to parse request body: {}", e)),
-            }
-        }
-        Err(e) => Err("internal_server_error".to_string()),
+    pub fn value(&self) -> serde_json::Value {
+        self.value.clone().unwrap_or(serde_json::Value::Null)
+    }
+
+    pub fn namespace(&self) -> &str {
+        &self.namespace
+    }
+
+    pub fn schedule_at(&self) -> Result<chrono::DateTime<chrono::Utc>, String> {
+        let timestamp = chrono::DateTime::parse_from_rfc3339(self.schedule_at.as_str()).unwrap();
+        Ok(timestamp.with_timezone(&chrono::Utc))
     }
 }
 
-// Define an error handler function which will accept the `routerify::Error`
-// and the request information and generates an appropriate response.
-async fn error_handler(err: routerify::RouteError, _: RequestInfo) -> Response<Body> {
-    eprintln!("{}", err);
-    Response::builder()
-        .status(StatusCode::INTERNAL_SERVER_ERROR)
-        .body(Body::from(format!("Something went wrong: {}", err)))
-        .unwrap()
-}
-
-// A middleware which logs an http request.
-async fn logger(req: Request<Body>) -> Result<Request<Body>, Infallible> {
-    println!(
-        "{} {} {}",
-        req.remote_addr(),
-        req.method(),
-        req.uri().path()
-    );
-    Ok(req)
+async fn schedule_event(mut req: Request<EventRepoPgsql>) -> tide::Result {
+    let event: CreateEvent = req.body_json().await.unwrap();
+    let repo: &EventRepoPgsql = req.state();
+    repo.insert(event.clone()).await.unwrap();
+    Ok("Hello world!".into())
 }
 
 pub struct CreateEventReq {
