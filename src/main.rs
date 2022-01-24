@@ -36,7 +36,8 @@ async fn main() {
 
     let mut app = tide::with_state(repo);
     app.at("/v1/schedule").put(schedule_event);
-    app.listen("127.0.0.1:3000").await.unwrap();
+    let bind: String = format!("127.0.0.1:{}", 3000);
+    app.listen(&bind).await.unwrap();
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -72,13 +73,6 @@ async fn schedule_event(mut req: Request<EventRepoPgsql>) -> tide::Result {
     let repo: &EventRepoPgsql = req.state();
     repo.insert(event.clone()).await.unwrap();
     Ok("Hello world!".into())
-}
-
-pub struct CreateEventReq {
-    key: String,
-    value: serde_json::Value,
-    namespace: String,
-    scheduled_at: chrono::DateTime<chrono::Utc>,
 }
 
 pub struct WebHookReq {
