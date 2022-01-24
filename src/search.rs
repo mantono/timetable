@@ -1,8 +1,9 @@
 use std::{convert::Infallible, ops::RangeInclusive, vec};
 
 use chrono::TimeZone;
+use postgres_types::ToSql;
 use serde_derive::Deserialize;
-use tokio_postgres::Row;
+use tokio_postgres::{GenericClient, Row};
 
 use crate::event::{Event, State};
 
@@ -171,8 +172,22 @@ impl EventRepoPgsql {
         todo!()
     }
 
-    fn insert(&mut self, event: Event) -> Result<Event, Infallible> {
-        todo!()
+    pub async fn insert(&self, event: Event) -> Result<Event, Infallible> {
+        let params: [&(dyn ToSql + Sync); 4] = [
+            &event.key(),
+            &event.namespace(),
+            &event.schedule_at(),
+            &event.value(),
+        ];
+        self.client
+            .query(
+                "INSERT INTO events(key, namespace, scheduled_at, value) VALUES($1, $2, $3, $4)",
+                params.as_slice(),
+            )
+            .await
+            .unwrap();
+
+        Ok(event)
     }
 
     fn get(&self, namespace: &str, event_id: uuid::Uuid) -> Result<Option<Event>, Infallible> {

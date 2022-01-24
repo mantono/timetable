@@ -6,6 +6,9 @@ use event::Event;
 use hyper::{Body, Request, Response, Server, StatusCode};
 use routerify::{ext::RequestExt, Middleware, RequestInfo, Router, RouterService};
 use search::Order;
+use serde::de::DeserializeOwned;
+use serde_derive::Deserialize;
+use serde_derive::Serialize;
 use tokio_postgres::GenericClient;
 use tokio_postgres::{Error, NoTls};
 
@@ -32,7 +35,7 @@ async fn main() {
     let repo = EventRepoPgsql::new(client);
     repo.init().await.unwrap();
 
-    let router = router();
+    let router = router(repo);
 
     // Create a Service from the router above to handle incoming requests.
     let service = RouterService::new(router).unwrap();
@@ -52,8 +55,9 @@ async fn main() {
 /// - POST /v1/schedule/search - Search for events
 /// - PUT /v1/schedule - Schedule event
 /// - PUT /v1/schedule/{namespace}/{event_id}/{state} - Update the state of the event
-fn router() -> Router<Body, Infallible> {
+fn router(event_repo: EventRepoPgsql) -> Router<Body, Infallible> {
     Router::builder()
+        .data(event_repo)
         .middleware(Middleware::pre(logger))
         .post("/v1/schedule/search", search_events)
         .put("/v1/schedule", schedule_event)
@@ -71,8 +75,33 @@ async fn search_events(req: Request<Body>) -> Result<Response<Body>, Infallible>
     Ok(Response::new(Body::from("Hello world!")))
 }
 
-async fn schedule_event(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+#[derive(Deserialize, Debug, Clone)]
+pub struct CreateEvent {
+    pub key: String,
+    pub value: Option<serde_json::Value>,
+    pub namespace: String,
+    #[serde(alias = "scheduleAt")]
+    pub schedule_at: chrono::DateTime<chrono::Utc>,
+}
+
+async fn schedule_event(mut req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    //let repo = req.data::<EventRepoPgsql>().unwrap();
+    let event: CreateEvent = get_request_body(&mut req).await.unwrap();
+    //repo.insert(event.clone()).await.unwrap();
     Ok(Response::new(Body::from("Hello world!")))
+}
+
+async fn get_request_body<T: DeserializeOwned>(req: &mut Request<Body>) -> Result<T, String> {
+    match hyper::body::to_bytes(req.body_mut()).await {
+        Ok(bytes) => {
+            let bytes = bytes.to_vec();
+            match serde_json::from_slice::<T>(bytes.as_slice()) {
+                Ok(body) => Ok(body),
+                Err(e) => Err(format!("failed to parse request body: {}", e)),
+            }
+        }
+        Err(e) => Err("internal_server_error".to_string()),
+    }
 }
 
 // Define an error handler function which will accept the `routerify::Error`
@@ -97,8 +126,10 @@ async fn logger(req: Request<Body>) -> Result<Request<Body>, Infallible> {
 }
 
 pub struct CreateEventReq {
+    key: String,
+    value: serde_json::Value,
     namespace: String,
-    event: Event,
+    scheduled_at: chrono::DateTime<chrono::Utc>,
 }
 
 pub struct WebHookReq {
