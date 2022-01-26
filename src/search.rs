@@ -6,8 +6,8 @@ use serde_derive::Deserialize;
 use tokio_postgres::{GenericClient, Row};
 
 use crate::{
+    db::event::EventRepoPgsql,
     event::{Event, State},
-    CreateEvent,
 };
 
 #[derive(Deserialize, Debug, Clone)]
@@ -120,93 +120,6 @@ impl EventService {
 pub enum EventRepoErr {
     Connection,
     InvalidState,
-}
-
-#[derive(Clone)]
-pub struct EventRepoPgsql {
-    client: Arc<tokio_postgres::Client>,
-}
-
-impl EventRepoPgsql {
-    pub fn new(client: tokio_postgres::Client) -> EventRepoPgsql {
-        let client = Arc::new(client);
-        EventRepoPgsql { client }
-    }
-
-    pub async fn init(&self) -> Result<(), tokio_postgres::Error> {
-        self.init_enum().await?;
-        self.init_table().await?;
-        self.init_idx().await
-    }
-
-    async fn init_enum(&self) -> Result<(), tokio_postgres::Error> {
-        let rows: Vec<Row> = self
-            .client
-            .query(
-                "SELECT * FROM pg_enum WHERE enumlabel IN ('SCHEDULED', 'DISABLED', 'COMPLETED')",
-                &vec![],
-            )
-            .await?;
-
-        match rows.len() {
-            3 => Ok(()),
-            0 => self
-                .client
-                .simple_query(include_str!("../res/db/create_state_enums.sql"))
-                .await
-                .map(|_| ()),
-            _ => panic!("Bad database state for created enums"),
-        }
-    }
-
-    async fn init_table(&self) -> Result<(), tokio_postgres::Error> {
-        self.client
-            .simple_query(include_str!("../res/db/create_events_table.sql"))
-            .await
-            .map(|_| ())
-    }
-
-    async fn init_idx(&self) -> Result<(), tokio_postgres::Error> {
-        self.client
-            .simple_query(include_str!("../res/db/create_events_indices.sql"))
-            .await
-            .map(|_| ())
-    }
-
-    fn search(&self, query: SearchQuery) -> Result<Vec<&Event>, Infallible> {
-        todo!()
-    }
-
-    pub async fn insert(&self, event: CreateEvent) -> Result<CreateEvent, Infallible> {
-        let params: [&(dyn ToSql + Sync); 4] = [
-            &event.key(),
-            &event.namespace(),
-            &event.schedule_at().unwrap(),
-            &event.value(),
-        ];
-        self.client
-            .query(
-                "INSERT INTO events(key, namespace, scheduled_at, value) VALUES($1, $2, $3, $4)",
-                params.as_slice(),
-            )
-            .await
-            .unwrap();
-
-        Ok(event)
-    }
-
-    fn get(&self, namespace: &str, event_id: uuid::Uuid) -> Result<Option<Event>, Infallible> {
-        todo!()
-    }
-
-    fn change_state(
-        &mut self,
-        namespace: &str,
-        event_id: uuid::Uuid,
-        new_state: State,
-    ) -> Result<(), Infallible> {
-        todo!()
-    }
 }
 
 struct VecRepo(Vec<Event>);

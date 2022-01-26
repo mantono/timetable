@@ -1,4 +1,6 @@
+use postgres_types::{FromSql, ToSql};
 use serde_derive::{Deserialize, Serialize};
+use tokio_postgres::Row;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Event {
@@ -117,12 +119,35 @@ impl Event {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq)]
+impl TryFrom<&Row> for Event {
+    type Error = tokio_postgres::Error;
+
+    fn try_from(value: &Row) -> Result<Self, Self::Error> {
+        let event = Event {
+            id: value.try_get(0)?,
+            key: value.try_get(1)?,
+            value: value.try_get(2)?,
+            idempotence_key: value.try_get(3)?,
+            namespace: value.try_get(4)?,
+            state: value.try_get(5)?,
+            created_at: value.try_get(6)?,
+            scheduled_at: value.try_get(7)?,
+        };
+
+        Ok(event)
+    }
+}
+
+#[derive(Serialize, Deserialize, ToSql, FromSql, Debug, Copy, Clone, PartialEq, Eq)]
+#[postgres(name = "state")]
 pub enum State {
     #[serde(alias = "SCHEDULED")]
+    #[postgres(name = "SCHEDULED")]
     Scheduled,
     #[serde(alias = "DISABLED")]
+    #[postgres(name = "DISABLED")]
     Disabled,
     #[serde(alias = "COMPLETED")]
+    #[postgres(name = "COMPLETED")]
     Completed,
 }
