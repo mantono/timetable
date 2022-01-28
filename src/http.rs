@@ -1,8 +1,10 @@
 pub mod event {
+    use std::str::FromStr;
+
     use serde::Deserialize;
     use tide::Request;
 
-    use crate::db::event::EventRepoPgsql;
+    use crate::{db::event::EventRepoPgsql, event::State};
 
     pub async fn schedule_event(mut req: Request<EventRepoPgsql>) -> tide::Result {
         let event: CreateEvent = req.body_json().await?;
@@ -21,6 +23,69 @@ pub mod event {
                 tide::Result::Err(err)
             }
         }
+    }
+
+    pub async fn update_event(mut req: Request<EventRepoPgsql>) -> tide::Result {
+        let update: UpdateEvent = req.body_json().await?;
+        let repo: &EventRepoPgsql = req.state();
+        let res = repo.change_state(&update).await;
+
+        match res {
+            Ok(Some(event)) => ok(200, serde_json::to_string(&event).unwrap()),
+            Ok(None) => match repo.get(&update.key, update.id, &update.namespace).await {
+                Ok(Some(event)) => ok(200, serde_json::to_string(&event).unwrap()),
+                Ok(None) => err(404, "Event not found"),
+                Err(e) => match e {
+                    crate::db::event::RepoErr::Connection => todo!(),
+                    crate::db::event::RepoErr::AlreadyScheduled => todo!(),
+                    crate::db::event::RepoErr::IllegalState => todo!(),
+                    crate::db::event::RepoErr::Conversion => todo!(),
+                    crate::db::event::RepoErr::NoResult => todo!(),
+                    crate::db::event::RepoErr::Other(_) => todo!(),
+                    crate::db::event::RepoErr::Unknown => todo!(),
+                },
+            },
+            Err(e) => match e {
+                crate::db::event::RepoErr::Connection => todo!(),
+                crate::db::event::RepoErr::AlreadyScheduled => todo!(),
+                crate::db::event::RepoErr::IllegalState => err(409, ""),
+                crate::db::event::RepoErr::Conversion => todo!(),
+                crate::db::event::RepoErr::NoResult => todo!(),
+                crate::db::event::RepoErr::Other(_) => todo!(),
+                crate::db::event::RepoErr::Unknown => err(500, ""),
+            },
+        }
+    }
+
+    fn ok<S, M>(status: S, msg: M) -> tide::Result
+    where
+        S: TryInto<tide::StatusCode>,
+        S::Error: std::fmt::Debug,
+        M: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static,
+    {
+        let res = tide::Response::builder(status)
+            .body(msg.to_string())
+            .build();
+
+        Ok(res)
+    }
+
+    fn err<S, M>(status: S, msg: M) -> tide::Result
+    where
+        S: TryInto<tide::StatusCode>,
+        S::Error: std::fmt::Debug,
+        M: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static,
+    {
+        tide::Result::Err(tide::Error::from_str(status, msg))
+    }
+
+    #[derive(Deserialize, Debug, Clone)]
+    pub struct UpdateEvent {
+        pub key: String,
+        #[serde(alias = "eventId")]
+        pub id: uuid::Uuid,
+        pub namespace: String,
+        pub state: State,
     }
 
     #[derive(Deserialize, Debug, Clone)]

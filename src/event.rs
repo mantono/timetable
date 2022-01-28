@@ -8,9 +8,12 @@ pub struct Event {
     value: serde_json::Value,
     id: uuid::Uuid,
     namespace: String,
+    #[serde(rename = "idempotenceKey")]
     idempotence_key: uuid::Uuid,
     state: State,
+    #[serde(rename = "createdAt")]
     created_at: chrono::DateTime<chrono::Utc>,
+    #[serde(rename = "scheduledAt")]
     scheduled_at: chrono::DateTime<chrono::Utc>,
 }
 

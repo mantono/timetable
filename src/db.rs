@@ -6,7 +6,7 @@ pub mod event {
 
     use crate::{
         event::{Event, State},
-        http::event::CreateEvent,
+        http::event::{CreateEvent, UpdateEvent},
         search::SearchQuery,
     };
 
@@ -89,17 +89,60 @@ pub mod event {
             }
         }
 
-        fn get(&self, namespace: &str, event_id: uuid::Uuid) -> Result<Option<Event>, Infallible> {
-            todo!()
+        pub async fn get(
+            &self,
+            key: &str,
+            id: uuid::Uuid,
+            namespace: &str,
+        ) -> Result<Option<Event>, RepoErr> {
+            let params: [&(dyn ToSql + Sync); 3] = [&key, &id, &namespace];
+
+            let rows: Vec<Row> = self
+                .client
+                .query(
+                    "SELECT * FROM events WHERE key = $1 AND id = $2 AND namespace = $3",
+                    params.as_slice(),
+                )
+                .await?;
+
+            match rows.first() {
+                Some(row) => match Event::try_from(row) {
+                    Ok(event) => Ok(Some(event)),
+                    Err(e) => Err(RepoErr::from(e)),
+                },
+                None => Ok(None),
+            }
         }
 
-        fn change_state(
-            &mut self,
-            namespace: &str,
-            event_id: uuid::Uuid,
-            new_state: State,
-        ) -> Result<(), Infallible> {
-            todo!()
+        pub async fn change_state(&self, update: &UpdateEvent) -> Result<Option<Event>, RepoErr> {
+            if let State::Scheduled = update.state {
+                return Err(RepoErr::IllegalState);
+            }
+
+            let UpdateEvent {
+                key,
+                id,
+                namespace,
+                state,
+            } = update;
+
+            let params: [&(dyn ToSql + Sync); 4] = [&state, &id, &key, &namespace];
+
+            let rows: Vec<Row> = self
+                .client
+                .query(
+                    include_str!("../res/db/update_event.sql"),
+                    params.as_slice(),
+                )
+                .await?;
+
+            match rows.first() {
+                Some(row) => match Event::try_from(row) {
+                    Ok(event) => Ok(Some(event)),
+                    Err(e) => Err(RepoErr::from(e)),
+                },
+                None => Ok(None),
+            }
         }
     }
 
@@ -142,6 +185,7 @@ pub mod event {
     pub enum RepoErr {
         Connection,
         AlreadyScheduled,
+        IllegalState,
         Conversion,
         NoResult,
         Other(String),
