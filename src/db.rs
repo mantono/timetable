@@ -1,12 +1,13 @@
 pub mod event {
     use std::{convert::Infallible, sync::Arc};
 
+    use log::info;
     use postgres_types::{FromSql, ToSql};
     use tokio_postgres::{error::DbError, Row};
 
     use crate::{
         event::{Event, State},
-        http::event::{CreateEvent, UpdateEvent},
+        http::event::{CreateEvent, SettleEvent},
         search::SearchQuery,
     };
 
@@ -60,8 +61,46 @@ pub mod event {
                 .map(|_| ())
         }
 
-        fn search(&self, query: SearchQuery) -> Result<Vec<&Event>, Infallible> {
-            todo!()
+        pub async fn search(
+            &self,
+            query: &SearchQuery,
+        ) -> Result<Vec<Event>, tokio_postgres::Error> {
+            info!("0");
+
+            let states: Vec<State> = query.state();
+            let (min, max) = query.scheduled_at().into_inner();
+
+            let params: [&(dyn ToSql + Sync); 8] = [
+                &query.namespace(),
+                &query.key(),
+                &states.get(0),
+                &states.get(1),
+                &states.get(2),
+                &min,
+                &max,
+                &query.limit(),
+            ];
+
+            info!("1");
+
+            let rows: Vec<Row> = self
+                .client
+                .query(
+                    include_str!("../res/db/search_events.sql"),
+                    params.as_slice(),
+                )
+                .await?;
+
+            info!("2");
+
+            let events: Vec<Event> = rows
+                .iter()
+                .filter_map(|row| Event::try_from(row).ok())
+                .collect();
+
+            info!("Search successful");
+
+            Ok(events)
         }
 
         pub async fn insert(&self, event: CreateEvent) -> Result<Event, RepoErr> {
@@ -114,12 +153,12 @@ pub mod event {
             }
         }
 
-        pub async fn change_state(&self, update: &UpdateEvent) -> Result<Option<Event>, RepoErr> {
+        pub async fn change_state(&self, update: &SettleEvent) -> Result<Option<Event>, RepoErr> {
             if let State::Scheduled = update.state {
                 return Err(RepoErr::IllegalState);
             }
 
-            let UpdateEvent {
+            let SettleEvent {
                 key,
                 id,
                 namespace,

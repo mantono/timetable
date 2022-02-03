@@ -2,9 +2,14 @@ pub mod event {
     use std::str::FromStr;
 
     use serde::Deserialize;
+    use serde_json::json;
     use tide::Request;
 
-    use crate::{db::event::EventRepoPgsql, event::State};
+    use crate::{
+        db::event::EventRepoPgsql,
+        event::{Event, State},
+        search::SearchQuery,
+    };
 
     pub async fn schedule_event(mut req: Request<EventRepoPgsql>) -> tide::Result {
         let event: CreateEvent = req.body_json().await?;
@@ -25,8 +30,25 @@ pub mod event {
         }
     }
 
-    pub async fn update_event(mut req: Request<EventRepoPgsql>) -> tide::Result {
-        let update: UpdateEvent = req.body_json().await?;
+    pub async fn search_events(mut req: Request<EventRepoPgsql>) -> tide::Result {
+        let query: SearchQuery = req.body_json().await?;
+        let repo: &EventRepoPgsql = req.state();
+        let events: Vec<Event> = repo.search(&query).await?;
+        let (min, max) = query.scheduled_at().into_inner();
+        let body = json!({
+            "namespace": query.namespace(),
+            "state": query.state(),
+            "scheduletAtMin": min,
+            "scheduledAtMax": max,
+            "limit": query.limit(),
+            "events": events
+        });
+
+        ok(200, body)
+    }
+
+    pub async fn settle_event(mut req: Request<EventRepoPgsql>) -> tide::Result {
+        let update: SettleEvent = req.body_json().await?;
         let repo: &EventRepoPgsql = req.state();
         let res = repo.change_state(&update).await;
 
@@ -80,9 +102,8 @@ pub mod event {
     }
 
     #[derive(Deserialize, Debug, Clone)]
-    pub struct UpdateEvent {
+    pub struct SettleEvent {
         pub key: String,
-        #[serde(alias = "eventId")]
         pub id: uuid::Uuid,
         pub namespace: String,
         pub state: State,
@@ -115,6 +136,13 @@ pub mod event {
                 chrono::DateTime::parse_from_rfc3339(self.schedule_at.as_str()).unwrap();
             Ok(timestamp.with_timezone(&chrono::Utc))
         }
+    }
+
+    #[derive(Deserialize, Debug, Clone)]
+    pub struct SettleAndNextEvent {
+        pub id: uuid::Uuid,
+        pub state: State,
+        pub next: CreateEvent,
     }
 }
 

@@ -16,7 +16,7 @@ pub struct SearchQuery {
     key: Option<String>,
     state: Option<Vec<State>>,
     order: Option<Order>,
-    limit: Option<usize>,
+    limit: Option<u32>,
     scheduled_at_min: Option<chrono::DateTime<chrono::Utc>>,
     scheduled_at_max: Option<chrono::DateTime<chrono::Utc>>,
 }
@@ -41,7 +41,7 @@ impl SearchQuery {
         self.order.unwrap_or(Order::Asc)
     }
 
-    pub fn limit(&self) -> usize {
+    pub fn limit(&self) -> u32 {
         self.limit.unwrap_or(100)
     }
 
