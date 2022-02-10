@@ -79,6 +79,13 @@ pub mod event {
         }
     }
 
+    pub async fn settle_and_next(mut req: Request<EventRepoPgsql>) -> tide::Result {
+        let settle: SettleAndNextEvent = req.body_json().await?;
+        let repo: &EventRepoPgsql = req.state();
+
+        ok(200, "ok")
+    }
+
     fn ok<S, M>(status: S, msg: M) -> tide::Result
     where
         S: TryInto<tide::StatusCode>,

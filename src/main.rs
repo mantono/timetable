@@ -6,7 +6,7 @@ use tokio_postgres::NoTls;
 
 use crate::config::Config;
 use crate::db::event::EventRepoPgsql;
-use crate::http::event::{schedule_event, search_events, settle_event};
+use crate::http::event::{schedule_event, search_events, settle_and_next, settle_event};
 use crate::logger::setup_logging;
 
 mod config;
@@ -38,6 +38,7 @@ async fn main() {
     let mut app = tide::with_state(repo);
     app.at("/v1/schedule").put(schedule_event);
     app.at("/v1/schedule/settle").put(settle_event);
+    app.at("/v1/schedule/next").put(settle_and_next);
     app.at("/v1/schedule/search").post(search_events);
     let bind: String = format!("127.0.0.1:{}", 3000);
     app.listen(&bind).await.unwrap();
