@@ -1,3 +1,5 @@
+PREPARE update_event (state, uuid, text, text) AS
+
 UPDATE events
 SET state = $1
 WHERE id = $2
