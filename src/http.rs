@@ -82,8 +82,10 @@ pub mod event {
     pub async fn settle_and_next(mut req: Request<EventRepoPgsql>) -> tide::Result {
         let settle: SettleAndNextEvent = req.body_json().await?;
         let repo: &EventRepoPgsql = req.state();
-
-        ok(200, "ok")
+        match repo.update_and_insert(&settle).await {
+            Ok(event) => ok(200, serde_json::to_string(&event).unwrap()),
+            Err(_) => err(400, "Unable to perform settle and schedule"),
+        }
     }
 
     fn ok<S, M>(status: S, msg: M) -> tide::Result

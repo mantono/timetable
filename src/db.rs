@@ -1,31 +1,69 @@
 pub mod event {
-    use std::{convert::Infallible, sync::Arc};
+    use std::{
+        borrow::BorrowMut,
+        convert::Infallible,
+        sync::{Arc, MutexGuard},
+    };
 
     use log::info;
-    use postgres_types::{FromSql, ToSql};
-    use tokio_postgres::{error::DbError, Row};
+    use postgres_types::{FromSql, ToSql, Type};
+    use tokio::sync::Mutex;
+    use tokio_postgres::{error::DbError, Row, Statement};
 
     use crate::{
         event::{Event, State},
-        http::event::{CreateEvent, SettleEvent},
+        http::event::{CreateEvent, SettleAndNextEvent, SettleEvent},
         search::SearchQuery,
     };
 
     #[derive(Clone)]
     pub struct EventRepoPgsql {
         client: Arc<tokio_postgres::Client>,
+        insert_stmt: Option<Statement>,
+        update_stmt: Option<Statement>,
     }
 
     impl EventRepoPgsql {
         pub fn new(client: Arc<tokio_postgres::Client>) -> EventRepoPgsql {
-            EventRepoPgsql { client }
+            EventRepoPgsql {
+                client,
+                insert_stmt: None,
+                update_stmt: None,
+            }
         }
 
-        pub async fn init(&self) -> Result<(), tokio_postgres::Error> {
+        pub async fn init(&mut self) -> Result<(), tokio_postgres::Error> {
             self.init_enum().await?;
             self.init_table().await?;
-            self.init_idx().await
+            self.init_idx().await?;
+
+            let insert_stmt = self
+                .client
+                .prepare_typed(
+                    include_str!("../res/db/insert_event.sql"),
+                    &[Type::TEXT, Type::TEXT, Type::TIMESTAMPTZ, Type::JSON],
+                )
+                .await?;
+
+            self.insert_stmt = Some(insert_stmt);
+
+            Ok(())
         }
+
+        /*         async fn insert_stmt(&mut self) -> Result<&Statement, tokio_postgres::Error> {
+            match &self.insert_stmt {
+                Some(stmt) => Ok(stmt),
+                None => {
+                    let stmt: Statement = self
+                        .client
+                        .prepare(include_str!("../res/db/insert_event.sql"))
+                        .await?;
+
+                    self.insert_stmt = Some(stmt);
+                    Ok(&stmt)
+                }
+            }
+        } */
 
         async fn init_enum(&self) -> Result<(), tokio_postgres::Error> {
             let rows: Vec<Row> = self
@@ -113,10 +151,7 @@ pub mod event {
 
             let rows: Vec<Row> = self
                 .client
-                .query(
-                    include_str!("../res/db/insert_event.sql"),
-                    params.as_slice(),
-                )
+                .query(self.insert_stmt.as_ref().unwrap(), params.as_slice())
                 .await?;
 
             match rows.first() {
@@ -181,6 +216,63 @@ pub mod event {
                     Err(e) => Err(RepoErr::from(e)),
                 },
                 None => Ok(None),
+            }
+        }
+
+        pub async fn update_and_insert(
+            &self,
+            replace: &SettleAndNextEvent,
+        ) -> Result<Event, RepoErr> {
+            if let State::Scheduled = replace.state {
+                return Err(RepoErr::IllegalState);
+            }
+
+            let SettleAndNextEvent { id, state, next } = replace;
+
+            let params: [&(dyn ToSql + Sync); 6] = [
+                &state,
+                &id,
+                &next.key(),
+                &next.namespace(),
+                &next.schedule_at().unwrap(),
+                &next.value(),
+            ];
+
+            //self.client.borrow_mut().transaction();
+
+            /*             let mut cln: tokio::sync::MutexGuard<tokio_postgres::Client> = self.client.lock().await;
+            let tx = cln.transaction().await?;
+            let rows: Vec<Row> = tx
+                .query(
+                    include_str!("../res/db/update_and_insert.sql"),
+                    params.as_slice(),
+                )
+                .await?; */
+            //let mut client = self.client.lock().await;
+
+            let rows: Vec<Row> = self
+                .client
+                .query("../res/db/update_and_insert.sql", params.as_slice())
+                .await?;
+
+            /*             let rows: Vec<Row> = self
+            .client
+            .lock()
+            .await
+            .transaction()
+            .await?
+            .query(
+                include_str!("../res/db/update_and_insert.sql"),
+                params.as_slice(),
+            )
+            .await?; */
+
+            match rows.first() {
+                Some(row) => match Event::try_from(row) {
+                    Ok(event) => Ok(event),
+                    Err(e) => Err(RepoErr::from(e)),
+                },
+                None => Err(RepoErr::NoResult),
             }
         }
     }

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use clap::Parser;
 use search::Order;
+use tokio::sync::Mutex;
 use tokio_postgres::NoTls;
 
 use crate::config::Config;
@@ -32,7 +33,7 @@ async fn main() {
     });
 
     let client = Arc::new(client);
-    let repo = EventRepoPgsql::new(client);
+    let mut repo = EventRepoPgsql::new(client);
     repo.init().await.unwrap();
 
     let mut app = tide::with_state(repo);
