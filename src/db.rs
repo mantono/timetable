@@ -1,14 +1,8 @@
 pub mod event {
-    use std::{
-        borrow::BorrowMut,
-        convert::Infallible,
-        sync::{Arc, MutexGuard},
-    };
+    use std::sync::Arc;
 
     use log::info;
-    use postgres_types::{FromSql, ToSql, Type};
-    use tokio::sync::Mutex;
-    use tokio_postgres::{error::DbError, Row, Statement};
+    use sqlx::{pool::PoolConnection, postgres::PgPoolOptions, Executor, FromRow, Postgres};
 
     use crate::{
         event::{Event, State},
@@ -18,39 +12,30 @@ pub mod event {
 
     #[derive(Clone)]
     pub struct EventRepoPgsql {
-        client: Arc<tokio_postgres::Client>,
-        insert_stmt: Option<Statement>,
-        update_stmt: Option<Statement>,
+        pool: Arc<sqlx::PgPool>,
     }
 
     impl EventRepoPgsql {
-        pub fn new(client: Arc<tokio_postgres::Client>) -> EventRepoPgsql {
-            EventRepoPgsql {
-                client,
-                insert_stmt: None,
-                update_stmt: None,
-            }
-        }
-
-        pub async fn init(&mut self) -> Result<(), tokio_postgres::Error> {
-            self.init_enum().await?;
-            self.init_table().await?;
-            self.init_idx().await?;
-
-            let insert_stmt = self
-                .client
-                .prepare_typed(
-                    include_str!("../res/db/insert_event.sql"),
-                    &[Type::TEXT, Type::TEXT, Type::TIMESTAMPTZ, Type::JSON],
-                )
+        pub async fn new(db_url: &str) -> Result<EventRepoPgsql, sqlx::Error> {
+            let pool = PgPoolOptions::new()
+                .max_connections(2)
+                .connect(db_url)
                 .await?;
 
-            self.insert_stmt = Some(insert_stmt);
+            let repo = EventRepoPgsql {
+                pool: Arc::new(pool),
+            };
 
-            Ok(())
+            Ok(repo)
         }
 
-        /*         async fn insert_stmt(&mut self) -> Result<&Statement, tokio_postgres::Error> {
+        pub async fn init(&mut self) -> Result<(), sqlx::Error> {
+            self.init_enum().await?;
+            self.init_table().await?;
+            self.init_idx().await
+        }
+
+        /*         async fn insert_stmt(&mut self) -> Result<&Statement, sqlx::Error> {
             match &self.insert_stmt {
                 Some(stmt) => Ok(stmt),
                 None => {
@@ -64,48 +49,59 @@ pub mod event {
                 }
             }
         } */
+        async fn conn(&self) -> Result<PoolConnection<Postgres>, sqlx::Error> {
+            self.pool.acquire().await
+        }
 
-        async fn init_enum(&self) -> Result<(), tokio_postgres::Error> {
+        async fn init_enum(&self) -> Result<(), sqlx::Error> {
+            let mut rows: Vec<_> = sqlx::query(
+                "SELECT * FROM pg_enum WHERE enumlabel IN ('SCHEDULED', 'DISABLED', 'COMPLETED')",
+            )
+            .map(|_| ())
+            .fetch_all(&mut self.conn().await?)
+            .await?;
+
+            /*
             let rows: Vec<Row> = self
             .client
             .query(
                 "SELECT * FROM pg_enum WHERE enumlabel IN ('SCHEDULED', 'DISABLED', 'COMPLETED')",
                 &vec![],
             )
-            .await?;
+            .await?; */
 
             match rows.len() {
                 3 => Ok(()),
                 0 => self
-                    .client
-                    .simple_query(include_str!("../res/db/create_state_enums.sql"))
+                    .conn()
+                    .await?
+                    .execute(include_str!("../res/db/create_state_enums.sql"))
                     .await
                     .map(|_| ()),
                 _ => panic!("Bad database state for created enums"),
             }
         }
 
-        async fn init_table(&self) -> Result<(), tokio_postgres::Error> {
-            self.client
-                .simple_query(include_str!("../res/db/create_events_table.sql"))
+        async fn init_table(&self) -> Result<(), sqlx::Error> {
+            self.conn()
+                .await?
+                .execute(include_str!("../res/db/create_events_table.sql"))
                 .await
                 .map(|_| ())
         }
 
-        async fn init_idx(&self) -> Result<(), tokio_postgres::Error> {
-            self.client
-                .simple_query(include_str!("../res/db/create_events_indices.sql"))
+        async fn init_idx(&self) -> Result<(), sqlx::Error> {
+            self.conn()
+                .await?
+                .execute(include_str!("../res/db/create_events_indices.sql"))
                 .await
                 .map(|_| ())
         }
 
-        pub async fn search(
-            &self,
-            query: &SearchQuery,
-        ) -> Result<Vec<Event>, tokio_postgres::Error> {
+        pub async fn search(&self, query: &SearchQuery) -> Result<Vec<Event>, sqlx::Error> {
             info!("0");
 
-            let states: Vec<State> = query.state();
+            /*             let states: Vec<State> = query.state();
             let (min, max) = query.scheduled_at().into_inner();
 
             let params: [&(dyn ToSql + Sync); 8] = [
@@ -136,31 +132,24 @@ pub mod event {
                 .filter_map(|row| Event::try_from(row).ok())
                 .collect();
 
-            info!("Search successful");
+            info!("Search successful"); */
+
+            let events = vec![];
 
             Ok(events)
         }
 
         pub async fn insert(&self, event: CreateEvent) -> Result<Event, RepoErr> {
-            let params: [&(dyn ToSql + Sync); 4] = [
-                &event.key(),
-                &event.namespace(),
-                &event.schedule_at().unwrap(),
-                &event.value(),
-            ];
-
-            let rows: Vec<Row> = self
-                .client
-                .query(self.insert_stmt.as_ref().unwrap(), params.as_slice())
+            let event: Event = sqlx::query(include_str!("../res/db/insert_event.sql"))
+                .bind(event.key())
+                .bind(event.namespace())
+                .bind(event.schedule_at().unwrap())
+                .bind(event.value())
+                .try_map(|row| Event::from_row(&row))
+                .fetch_one(&mut self.conn().await?)
                 .await?;
 
-            match rows.first() {
-                Some(row) => match row.try_into() {
-                    Ok(event) => Ok(event),
-                    Err(e) => Err(RepoErr::from(e)),
-                },
-                None => Err(RepoErr::NoResult),
-            }
+            Ok(event)
         }
 
         pub async fn get(
@@ -168,27 +157,23 @@ pub mod event {
             key: &str,
             id: uuid::Uuid,
             namespace: &str,
-        ) -> Result<Option<Event>, RepoErr> {
-            let params: [&(dyn ToSql + Sync); 3] = [&key, &id, &namespace];
+        ) -> Result<Event, RepoErr> {
+            let event: Option<Event> =
+                sqlx::query("SELECT * FROM events WHERE key = ? AND id = ? AND namespace = ?")
+                    .bind(key)
+                    .bind(id)
+                    .bind(namespace)
+                    .try_map(|row| Event::from_row(&row))
+                    .fetch_optional(&mut self.conn().await?)
+                    .await?;
 
-            let rows: Vec<Row> = self
-                .client
-                .query(
-                    "SELECT * FROM events WHERE key = $1 AND id = $2 AND namespace = $3",
-                    params.as_slice(),
-                )
-                .await?;
-
-            match rows.first() {
-                Some(row) => match Event::try_from(row) {
-                    Ok(event) => Ok(Some(event)),
-                    Err(e) => Err(RepoErr::from(e)),
-                },
-                None => Ok(None),
+            match event {
+                Some(event) => Ok(event),
+                None => Err(RepoErr::NoResult),
             }
         }
 
-        pub async fn change_state(&self, update: &SettleEvent) -> Result<Option<Event>, RepoErr> {
+        pub async fn change_state(&self, update: &SettleEvent) -> Result<Event, RepoErr> {
             if let State::Scheduled = update.state {
                 return Err(RepoErr::IllegalState);
             }
@@ -200,24 +185,40 @@ pub mod event {
                 state,
             } = update;
 
-            let params: [&(dyn ToSql + Sync); 4] = [&state, &id, &key, &namespace];
-
-            let rows: Vec<Row> = self
-                .client
-                .query(
-                    include_str!("../res/db/update_event.sql"),
-                    params.as_slice(),
-                )
+            let event: Option<Event> = sqlx::query(include_str!("../res/db/update_event.sql"))
+                .bind(key)
+                .bind(id)
+                .bind(namespace)
+                .bind(state)
+                .try_map(|row| Event::from_row(&row))
+                .fetch_optional(&mut self.conn().await?)
                 .await?;
 
-            match rows.first() {
-                Some(row) => match Event::try_from(row) {
-                    Ok(event) => Ok(Some(event)),
-                    Err(e) => Err(RepoErr::from(e)),
-                },
-                None => Ok(None),
+            match event {
+                Some(event) => Ok(event),
+                None => Err(RepoErr::NoResult),
             }
         }
+        /*
+        fn parse_row(row: Result<PgRow, sqlx::Error>) -> Result<Event, RepoErr> {
+            match Event::try_from(row) {
+                Ok(event) => Ok(Some(event)),
+                Err(e) => Err(RepoErr::Other(e.to_string())),
+            }
+        }
+
+        fn parse_row_opt(
+            row: Result<std::option::Option<PgRow>, sqlx::Error>,
+        ) -> Result<Event, RepoErr> {
+            let row: Option<PgRow> = row?;
+            match row {
+                Some(row) => match Event::try_from(row) {
+                    Ok(event) => Ok(Some(event)),
+                    Err(e) => Err(RepoErr::Other(e.to_string())),
+                },
+                None => Err(RepoErr::NoResult),
+            }
+        } */
 
         pub async fn update_and_insert(
             &self,
@@ -229,14 +230,14 @@ pub mod event {
 
             let SettleAndNextEvent { id, state, next } = replace;
 
-            let params: [&(dyn ToSql + Sync); 6] = [
+            /*             let params: [&(dyn ToSql + Sync); 6] = [
                 &state,
                 &id,
                 &next.key(),
                 &next.namespace(),
                 &next.schedule_at().unwrap(),
                 &next.value(),
-            ];
+            ]; */
 
             //self.client.borrow_mut().transaction();
 
@@ -250,9 +251,15 @@ pub mod event {
                 .await?; */
             //let mut client = self.client.lock().await;
 
-            let rows: Vec<Row> = self
-                .client
-                .query("../res/db/update_and_insert.sql", params.as_slice())
+            let event: Option<Event> = sqlx::query("../res/db/update_and_insert.sql")
+                .bind(state)
+                .bind(id)
+                .bind(next.key())
+                .bind(next.namespace())
+                .bind(next.schedule_at().unwrap())
+                .bind(next.value())
+                .try_map(|row| Event::from_row(&row))
+                .fetch_optional(&mut self.conn().await?)
                 .await?;
 
             /*             let rows: Vec<Row> = self
@@ -267,11 +274,8 @@ pub mod event {
             )
             .await?; */
 
-            match rows.first() {
-                Some(row) => match Event::try_from(row) {
-                    Ok(event) => Ok(event),
-                    Err(e) => Err(RepoErr::from(e)),
-                },
+            match event {
+                Some(event) => Ok(event),
                 None => Err(RepoErr::NoResult),
             }
         }
@@ -296,19 +300,17 @@ pub mod event {
         }
     } */
 
-    impl From<tokio_postgres::Error> for RepoErr {
-        fn from(e: tokio_postgres::Error) -> Self {
+    impl From<sqlx::Error> for RepoErr {
+        fn from(e: sqlx::Error) -> Self {
             log::error!("DB Error: {:?}", e);
-            let db_err: &DbError = match e.as_db_error() {
-                Some(err) => err,
-                None => return RepoErr::Unknown,
-            };
-
-            if let Some("single_scheduled_idx") = db_err.constraint() {
-                return RepoErr::AlreadyScheduled;
-            };
-
-            RepoErr::Other(e.to_string())
+            match e {
+                sqlx::Error::Database(db_err) => match db_err.constraint() {
+                    Some(_) => RepoErr::AlreadyScheduled,
+                    None => RepoErr::Connection,
+                },
+                sqlx::Error::Io(_) => RepoErr::Connection,
+                _ => RepoErr::Unknown,
+            }
         }
     }
 

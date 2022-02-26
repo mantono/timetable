@@ -1,6 +1,4 @@
 pub mod event {
-    use std::str::FromStr;
-
     use serde::Deserialize;
     use serde_json::json;
     use tide::Request;
@@ -16,9 +14,7 @@ pub mod event {
 
         let repo: &EventRepoPgsql = req.state();
         match repo.insert(event.clone()).await {
-            Ok(event) => Ok(tide::Response::builder(200)
-                .body(serde_json::to_string(&event).unwrap())
-                .build()),
+            Ok(event) => ok(200, serde_json::to_string(&event).unwrap()),
             Err(e) => {
                 let (code, msg): (u16, &str) = match e {
                     crate::db::event::RepoErr::AlreadyScheduled => (409, "Unable to insert"),
@@ -53,28 +49,15 @@ pub mod event {
         let res = repo.change_state(&update).await;
 
         match res {
-            Ok(Some(event)) => ok(200, serde_json::to_string(&event).unwrap()),
-            Ok(None) => match repo.get(&update.key, update.id, &update.namespace).await {
-                Ok(Some(event)) => ok(200, serde_json::to_string(&event).unwrap()),
-                Ok(None) => err(404, "Event not found"),
-                Err(e) => match e {
-                    crate::db::event::RepoErr::Connection => todo!(),
-                    crate::db::event::RepoErr::AlreadyScheduled => todo!(),
-                    crate::db::event::RepoErr::IllegalState => todo!(),
-                    crate::db::event::RepoErr::Conversion => todo!(),
-                    crate::db::event::RepoErr::NoResult => todo!(),
-                    crate::db::event::RepoErr::Other(_) => todo!(),
-                    crate::db::event::RepoErr::Unknown => todo!(),
-                },
-            },
+            Ok(event) => ok(200, serde_json::to_string(&event).unwrap()),
             Err(e) => match e {
                 crate::db::event::RepoErr::Connection => todo!(),
                 crate::db::event::RepoErr::AlreadyScheduled => todo!(),
                 crate::db::event::RepoErr::IllegalState => err(409, ""),
                 crate::db::event::RepoErr::Conversion => todo!(),
-                crate::db::event::RepoErr::NoResult => todo!(),
                 crate::db::event::RepoErr::Other(_) => todo!(),
                 crate::db::event::RepoErr::Unknown => err(500, ""),
+                crate::db::event::RepoErr::NoResult => err(409, "No update"),
             },
         }
     }
