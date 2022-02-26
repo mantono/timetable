@@ -3,7 +3,6 @@ use std::{convert::Infallible, ops::RangeInclusive, sync::Arc, vec};
 use chrono::TimeZone;
 use postgres_types::ToSql;
 use serde_derive::Deserialize;
-use tokio_postgres::{GenericClient, Row};
 
 use crate::{
     db::event::EventRepoPgsql,

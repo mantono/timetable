@@ -1,9 +1,5 @@
-use std::sync::Arc;
-
 use clap::Parser;
-use search::Order;
-use tokio::sync::Mutex;
-use tokio_postgres::NoTls;
+use std::process;
 
 use crate::config::Config;
 use crate::db::event::EventRepoPgsql;
@@ -18,22 +14,20 @@ mod logger;
 mod search;
 mod webhook;
 
-#[tokio::main]
-async fn main() {
+#[async_std::main]
+async fn main() -> tide::Result<()> {
     let cfg: Config = Config::parse();
     println!("{}", cfg.db_url());
     setup_logging(&cfg.verbosity());
 
-    let (client, connection) = tokio_postgres::connect(cfg.db_url(), NoTls).await.unwrap();
-
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            eprintln!("connection error: {}", e);
+    let mut repo: EventRepoPgsql = match EventRepoPgsql::new(cfg.db_url()).await {
+        Ok(repo) => repo,
+        Err(e) => {
+            log::error!("Failed to init repo: {}", e);
+            process::exit(1)
         }
-    });
+    };
 
-    let client = Arc::new(client);
-    let mut repo = EventRepoPgsql::new(client);
     repo.init().await.unwrap();
 
     let mut app = tide::with_state(repo);
@@ -42,5 +36,8 @@ async fn main() {
     app.at("/v1/schedule/next").put(settle_and_next);
     app.at("/v1/schedule/search").post(search_events);
     let bind: String = format!("127.0.0.1:{}", 3000);
+
     app.listen(&bind).await.unwrap();
+
+    Ok(())
 }
