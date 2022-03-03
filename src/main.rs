@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
 use clap::Parser;
-use search::Order;
-use tokio::sync::Mutex;
 use tokio_postgres::NoTls;
 
 use crate::config::Config;

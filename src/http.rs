@@ -1,6 +1,4 @@
 pub mod event {
-    use std::str::FromStr;
-
     use serde::Deserialize;
     use serde_json::json;
     use tide::Request;
