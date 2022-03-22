@@ -17,7 +17,9 @@ pub struct SearchQuery {
     state: Option<Vec<State>>,
     order: Option<Order>,
     limit: Option<u32>,
+    #[serde(alias = "scheduledAtMin")]
     scheduled_at_min: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(alias = "scheduledAtMax")]
     scheduled_at_max: Option<chrono::DateTime<chrono::Utc>>,
 }
 
@@ -41,8 +43,8 @@ impl SearchQuery {
         self.order.unwrap_or(Order::Asc)
     }
 
-    pub fn limit(&self) -> u32 {
-        self.limit.unwrap_or(100)
+    pub fn limit(&self) -> i64 {
+        self.limit.unwrap_or(100) as i64
     }
 
     pub fn scheduled_at(&self) -> RangeInclusive<chrono::DateTime<chrono::Utc>> {
@@ -50,7 +52,7 @@ impl SearchQuery {
         let start: chrono::DateTime<chrono::Utc> = self.scheduled_at_min.unwrap_or(epoch);
 
         let end: chrono::DateTime<chrono::Utc> =
-            self.scheduled_at_max.unwrap_or(chrono::Utc::now());
+            self.scheduled_at_max.unwrap_or(chrono::MAX_DATETIME);
 
         start..=end
     }

@@ -1,4 +1,5 @@
 pub mod event {
+    use log::error;
     use serde::Deserialize;
     use serde_json::json;
     use tide::Request;
@@ -31,7 +32,13 @@ pub mod event {
     pub async fn search_events(mut req: Request<EventRepoPgsql>) -> tide::Result {
         let query: SearchQuery = req.body_json().await?;
         let repo: &EventRepoPgsql = req.state();
-        let events: Vec<Event> = repo.search(&query).await?;
+        let events: Vec<Event> = match repo.search(&query).await {
+            Ok(events) => events,
+            Err(e) => {
+                error!("Error searching, {:?}", e);
+                return Err(e.into());
+            }
+        };
         let (min, max) = query.scheduled_at().into_inner();
         let body = json!({
             "namespace": query.namespace(),

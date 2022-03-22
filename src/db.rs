@@ -103,10 +103,10 @@ pub mod event {
             &self,
             query: &SearchQuery,
         ) -> Result<Vec<Event>, tokio_postgres::Error> {
-            info!("0");
-
             let states: Vec<State> = query.state();
             let (min, max) = query.scheduled_at().into_inner();
+
+            let limit: i64 = query.limit();
 
             let params: [&(dyn ToSql + Sync); 8] = [
                 &query.namespace(),
@@ -116,10 +116,8 @@ pub mod event {
                 &states.get(2),
                 &min,
                 &max,
-                &query.limit(),
+                &limit,
             ];
-
-            info!("1");
 
             let rows: Vec<Row> = self
                 .client
@@ -128,8 +126,6 @@ pub mod event {
                     params.as_slice(),
                 )
                 .await?;
-
-            info!("2");
 
             let events: Vec<Event> = rows
                 .iter()

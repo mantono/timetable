@@ -1,4 +1,4 @@
-PREPARE insert_event(text, text, timestamp, json) AS
+-- PREPARE insert_event(text, text, timestamp, json) AS
 
 INSERT INTO events(key, namespace, scheduled_at, value)
 VALUES($1, $2, $3, $4)
