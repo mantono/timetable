@@ -153,10 +153,31 @@ pub mod event {
     }
 
     #[derive(Deserialize, Debug, Clone)]
+    pub struct NextEvent {
+        #[serde(alias = "scheduleAt")]
+        schedule_at: String,
+        value: Option<serde_json::Value>,
+    }
+
+    impl NextEvent {
+        pub fn value(&self) -> serde_json::Value {
+            self.value.clone().unwrap_or(serde_json::Value::Null)
+        }
+
+        pub fn schedule_at(&self) -> Result<chrono::DateTime<chrono::Utc>, String> {
+            let timestamp =
+                chrono::DateTime::parse_from_rfc3339(self.schedule_at.as_str()).unwrap();
+            Ok(timestamp.with_timezone(&chrono::Utc))
+        }
+    }
+
+    #[derive(Deserialize, Debug, Clone)]
     pub struct SettleAndNextEvent {
+        pub key: String,
         pub id: uuid::Uuid,
+        pub namespace: String,
         pub state: State,
-        pub next: CreateEvent,
+        pub next: NextEvent,
     }
 }
 

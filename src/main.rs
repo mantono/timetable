@@ -23,16 +23,24 @@ async fn main() {
     println!("{}", cfg.db_url());
     setup_logging(&cfg.verbosity());
 
-    let (client, connection) = tokio_postgres::connect(cfg.db_url(), NoTls).await.unwrap();
+    let (client, con0) = tokio_postgres::connect(cfg.db_url(), NoTls).await.unwrap();
+    let (client_trx, con1) = tokio_postgres::connect(cfg.db_url(), NoTls).await.unwrap();
 
     tokio::spawn(async move {
-        if let Err(e) = connection.await {
+        if let Err(e) = con0.await {
             eprintln!("connection error: {}", e);
         }
     });
 
-    let client = Arc::new(Mutex::new(client));
-    let mut repo = EventRepoPgsql::new(client).await.unwrap();
+    tokio::spawn(async move {
+        if let Err(e) = con1.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+
+    let client = Arc::new(client);
+    let client_trx = Arc::new(Mutex::new(client_trx));
+    let mut repo = EventRepoPgsql::new(client, client_trx).await.unwrap();
     repo.init().await.unwrap();
 
     let mut app = tide::with_state(repo);

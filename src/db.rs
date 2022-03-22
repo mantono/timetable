@@ -5,6 +5,7 @@ pub mod event {
     use postgres_types::ToSql;
     use tokio::sync::Mutex;
     use tokio::sync::MutexGuard;
+    use tokio_postgres::GenericClient;
     use tokio_postgres::{error::DbError, Client, Row, Statement, Transaction};
 
     use crate::{
@@ -15,7 +16,8 @@ pub mod event {
 
     #[derive(Clone)]
     pub struct EventRepoPgsql {
-        client: Arc<Mutex<tokio_postgres::Client>>,
+        client: Arc<tokio_postgres::Client>,
+        client_trx: Arc<Mutex<tokio_postgres::Client>>,
         insert_stmt: Statement,
         update_stmt: Statement,
         search_stmt: Statement,
@@ -23,25 +25,24 @@ pub mod event {
 
     impl EventRepoPgsql {
         pub async fn new(
-            client: Arc<Mutex<tokio_postgres::Client>>,
+            client: Arc<tokio_postgres::Client>,
+            client_trx: Arc<Mutex<tokio_postgres::Client>>,
         ) -> Result<EventRepoPgsql, tokio_postgres::Error> {
-            let repo: tokio::sync::MutexGuard<'_, Client> = client.lock().await;
-            let insert_stmt = repo
+            let insert_stmt = client
                 .prepare(include_str!("../res/db/insert_event.sql"))
                 .await?;
 
-            let update_stmt = repo
+            let update_stmt = client
                 .prepare(include_str!("../res/db/update_event.sql"))
                 .await?;
 
-            let search_stmt = repo
+            let search_stmt = client
                 .prepare(include_str!("../res/db/search_events.sql"))
                 .await?;
 
-            drop(repo);
-
             let repo = EventRepoPgsql {
                 client,
+                client_trx,
                 insert_stmt,
                 update_stmt,
                 search_stmt,
@@ -59,9 +60,7 @@ pub mod event {
         }
 
         async fn init_enum(&self) -> Result<(), tokio_postgres::Error> {
-            let client = self.client.lock().await;
-
-            let rows: Vec<Row> = client
+            let rows: Vec<Row> = self.client
             .query(
                 "SELECT * FROM pg_enum WHERE enumlabel IN ('SCHEDULED', 'DISABLED', 'COMPLETED')",
                 &vec![],
@@ -70,7 +69,8 @@ pub mod event {
 
             match rows.len() {
                 3 => Ok(()),
-                0 => client
+                0 => self
+                    .client
                     .simple_query(include_str!("../res/db/create_state_enums.sql"))
                     .await
                     .map(|_| ()),
@@ -80,8 +80,6 @@ pub mod event {
 
         async fn init_table(&self) -> Result<(), tokio_postgres::Error> {
             self.client
-                .lock()
-                .await
                 .simple_query(include_str!("../res/db/create_events_table.sql"))
                 .await
                 .map(|_| ())
@@ -89,8 +87,6 @@ pub mod event {
 
         async fn init_idx(&self) -> Result<(), tokio_postgres::Error> {
             self.client
-                .lock()
-                .await
                 .simple_query(include_str!("../res/db/create_events_indices.sql"))
                 .await
                 .map(|_| ())
@@ -116,8 +112,7 @@ pub mod event {
                 &limit,
             ];
 
-            let client = self.client.lock().await;
-            let rows: Vec<Row> = client.query(&self.search_stmt, &params).await?;
+            let rows: Vec<Row> = self.client.query(&self.search_stmt, &params).await?;
 
             let events: Vec<Event> = rows
                 .iter()
@@ -137,8 +132,10 @@ pub mod event {
                 &event.value(),
             ];
 
-            let client = self.client.lock().await;
-            let rows: Vec<Row> = client.query(&self.insert_stmt, params.as_slice()).await?;
+            let rows: Vec<Row> = self
+                .client
+                .query(&self.insert_stmt, params.as_slice())
+                .await?;
 
             match rows.first() {
                 Some(row) => match row.try_into() {
@@ -147,10 +144,6 @@ pub mod event {
                 },
                 None => Err(RepoErr::NoResult),
             }
-        }
-
-        async fn client(&self) -> MutexGuard<'_, Client> {
-            self.client.lock().await
         }
 
         pub async fn get(
@@ -162,8 +155,7 @@ pub mod event {
             let params: [&(dyn ToSql + Sync); 3] = [&key, &id, &namespace];
 
             let rows: Vec<Row> = self
-                .client()
-                .await
+                .client
                 .query(
                     "SELECT * FROM events WHERE key = $1 AND id = $2 AND namespace = $3",
                     params.as_slice(),
@@ -194,8 +186,7 @@ pub mod event {
             let params: [&(dyn ToSql + Sync); 4] = [&state, &id, &key, &namespace];
 
             let rows: Vec<Row> = self
-                .client()
-                .await
+                .client
                 .query(&self.update_stmt, params.as_slice())
                 .await?;
 
@@ -216,12 +207,19 @@ pub mod event {
                 return Err(RepoErr::IllegalState);
             }
 
-            let SettleAndNextEvent { id, state, next } = replace;
+            let SettleAndNextEvent {
+                key,
+                id,
+                namespace,
+                state,
+                next,
+            } = replace;
 
-            let mut client = self.client().await;
-            let trx: Transaction = client.transaction().await?;
+            let params: [&(dyn ToSql + Sync); 4] = [&state, &id, &key, &namespace];
 
-            let params: [&(dyn ToSql + Sync); 4] = [&state, &id, &next.key(), &next.namespace()];
+            let mut client_trx = self.client_trx.lock().await;
+
+            let trx: Transaction = client_trx.transaction().await?;
 
             trx.query(
                 include_str!("../res/db/update_event.sql"),
@@ -230,8 +228,8 @@ pub mod event {
             .await?;
 
             let params: [&(dyn ToSql + Sync); 4] = [
-                &next.key(),
-                &next.namespace(),
+                &key,
+                &namespace,
                 &next.schedule_at().unwrap(),
                 &next.value(),
             ];
@@ -244,6 +242,7 @@ pub mod event {
                 .await?;
 
             trx.commit().await?;
+            drop(client_trx);
 
             match rows.first() {
                 Some(row) => match Event::try_from(row) {
