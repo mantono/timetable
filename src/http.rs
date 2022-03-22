@@ -39,7 +39,7 @@ pub mod event {
                 return Err(e.into());
             }
         };
-        let (min, max) = query.scheduled_at().into_inner();
+        let (min, max) = query.scheduled_at();
         let body = json!({
             "namespace": query.namespace(),
             "state": query.state(),

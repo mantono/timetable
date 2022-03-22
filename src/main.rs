@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use clap::Parser;
+use tokio::sync::Mutex;
 use tokio_postgres::NoTls;
 
 use crate::config::Config;
@@ -30,8 +31,8 @@ async fn main() {
         }
     });
 
-    let client = Arc::new(client);
-    let mut repo = EventRepoPgsql::new(client);
+    let client = Arc::new(Mutex::new(client));
+    let mut repo = EventRepoPgsql::new(client).await.unwrap();
     repo.init().await.unwrap();
 
     let mut app = tide::with_state(repo);

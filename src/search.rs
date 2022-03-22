@@ -47,14 +47,13 @@ impl SearchQuery {
         self.limit.unwrap_or(100) as i64
     }
 
-    pub fn scheduled_at(&self) -> RangeInclusive<chrono::DateTime<chrono::Utc>> {
-        let epoch = chrono::Utc.ymd(1970, 1, 1).and_hms(0, 0, 0);
-        let start: chrono::DateTime<chrono::Utc> = self.scheduled_at_min.unwrap_or(epoch);
-
-        let end: chrono::DateTime<chrono::Utc> =
-            self.scheduled_at_max.unwrap_or(chrono::MAX_DATETIME);
-
-        start..=end
+    pub fn scheduled_at(
+        &self,
+    ) -> (
+        Option<chrono::DateTime<chrono::Utc>>,
+        Option<chrono::DateTime<chrono::Utc>>,
+    ) {
+        (self.scheduled_at_min, self.scheduled_at_max)
     }
 }
 
